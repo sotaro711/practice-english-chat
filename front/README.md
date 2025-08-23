@@ -1,17 +1,44 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase 認証設定
+
+このプロジェクトでは Supabase を使用した認証機能が実装されています。
+
+### 環境変数の設定
+
+1. `env.example` ファイルを `.env.local` にコピーしてください：
+
+```bash
+cp env.example .env.local
+```
+
+2. `.env.local` ファイルを編集し、Supabase の設定値を入力してください：
+
+```env
+# Supabaseプロジェクトの設定値を入力
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+### セキュリティについて
+
+- `NEXT_PUBLIC_*` で始まる環境変数はクライアントサイドに露出されます
+- `SUPABASE_SERVICE_ROLE_KEY` はサーバーサイドでのみ使用され、ブラウザには露出されません
+- 新規登録はサーバーアクションを使用して安全に実行されます
+
+### 認証機能
+
+- **新規登録**: `/auth/signup` - メール認証付きの新規アカウント作成
+- **認証コールバック**: `/auth/callback` - メール確認後の処理
+
 ## Getting Started
 
 First, run the development server:
 
 ```bash
-npm run dev
-# or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
