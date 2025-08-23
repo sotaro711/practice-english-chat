@@ -39,7 +39,7 @@ export default function SignUpPage() {
           <p className="mt-2 text-center text-sm text-gray-600">
             または{" "}
             <a
-              href="/auth/signin"
+              href="/auth/login"
               className="font-medium text-indigo-600 hover:text-indigo-500"
             >
               既存のアカウントでログイン

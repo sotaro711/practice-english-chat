@@ -86,7 +86,7 @@ export default function Home() {
                     新規登録
                   </Link>
                   <Link
-                    href="/auth/signin"
+                    href="/auth/login"
                     className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
                   >
                     ログイン
@@ -108,8 +108,49 @@ export default function Home() {
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
                 こんにちは、{user.email}さん！
               </h2>
+              <p className="text-green-600 font-medium mb-4">
+                ✅ ログイン成功！認証が正常に完了しています。
+              </p>
+
+              {/* ユーザー詳細情報 */}
+              <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                <h3 className="text-lg font-medium text-gray-800 mb-3">
+                  ユーザー情報:
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">メールアドレス:</span>
+                    <span className="font-medium">{user.email}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ユーザーID:</span>
+                    <span className="font-mono text-xs">{user.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">登録日時:</span>
+                    <span className="text-xs">
+                      {new Date(user.created_at).toLocaleString("ja-JP")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">最終ログイン:</span>
+                    <span className="text-xs">
+                      {user.last_sign_in_at
+                        ? new Date(user.last_sign_in_at).toLocaleString("ja-JP")
+                        : "不明"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">認証プロバイダー:</span>
+                    <span className="text-xs">
+                      {user.app_metadata?.provider || "email"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <p className="text-gray-600 mb-6">
-                認証が正常に完了しています。ダッシュボードでアプリケーションの機能をご利用ください。
+                ダッシュボードでアプリケーションの機能をご利用ください。
               </p>
               <Link
                 href="/dashboard"
@@ -131,7 +172,7 @@ export default function Home() {
                   新規登録
                 </Link>
                 <Link
-                  href="/auth/signin"
+                  href="/auth/login"
                   className="border border-indigo-600 text-indigo-600 hover:bg-indigo-50 px-8 py-3 rounded-md font-medium transition-colors"
                 >
                   ログイン

@@ -1,7 +1,6 @@
 "use server";
 
 import { createServerClient } from "./supabase-server";
-import { redirect } from "next/navigation";
 
 // 新規登録用のフォームデータ型
 export interface SignUpFormData {
@@ -123,8 +122,12 @@ export async function handleAuthCallback(code: string) {
     }
 
     if (data.session) {
-      // 認証成功後、ダッシュボードにリダイレクト
-      redirect("/dashboard");
+      // 認証成功時のレスポンス
+      return {
+        success: true,
+        message: "メール確認が完了しました",
+        redirectTo: "/dashboard",
+      };
     }
 
     return {
@@ -134,6 +137,136 @@ export async function handleAuthCallback(code: string) {
     console.error("コールバック処理エラー:", error);
     return {
       error: "認証処理でエラーが発生しました",
+    };
+  }
+}
+
+// ログイン用のサーバーアクション
+export async function signIn(formData: FormData) {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  // バリデーション
+  if (!email || !password) {
+    return {
+      error: "メールアドレスとパスワードを入力してください",
+    };
+  }
+
+  // メールアドレスの基本的なバリデーション
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return {
+      error: "有効なメールアドレスを入力してください",
+    };
+  }
+
+  try {
+    const supabase = createServerClient();
+
+    // Supabaseでログイン
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      console.error("ログインエラー:", error);
+
+      // よくあるエラーを日本語に翻訳
+      if (error.message.includes("Invalid login credentials")) {
+        return {
+          error: "メールアドレスまたはパスワードが正しくありません",
+        };
+      }
+
+      if (error.message.includes("Email not confirmed")) {
+        return {
+          error: "メール確認が完了していません。確認メールをご確認ください。",
+        };
+      }
+
+      if (error.message.includes("Too many requests")) {
+        return {
+          error:
+            "ログイン試行回数が多すぎます。しばらく時間をおいてから再度お試しください。",
+        };
+      }
+
+      return {
+        error:
+          "ログインに失敗しました。メールアドレスとパスワードをご確認ください。",
+      };
+    }
+
+    if (data.user && data.session) {
+      // ログイン成功時のレスポンス
+      return {
+        success: true,
+        message: "ログインに成功しました",
+        user: data.user,
+        redirectTo: "/dashboard",
+      };
+    }
+
+    return {
+      error: "ログイン処理で予期しないエラーが発生しました",
+    };
+  } catch (error) {
+    console.error("サーバーアクションエラー:", error);
+    return {
+      error: `サーバーエラー: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+    };
+  }
+}
+
+// パスワードリセット用のサーバーアクション
+export async function resetPassword(formData: FormData) {
+  const email = formData.get("email") as string;
+
+  // バリデーション
+  if (!email) {
+    return {
+      error: "メールアドレスを入力してください",
+    };
+  }
+
+  // メールアドレスの基本的なバリデーション
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return {
+      error: "有効なメールアドレスを入力してください",
+    };
+  }
+
+  try {
+    const supabase = createServerClient();
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${
+        process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+      }/auth/callback`,
+    });
+
+    if (error) {
+      console.error("パスワードリセットエラー:", error);
+      return {
+        error:
+          "パスワードリセットメールの送信に失敗しました。メールアドレスをご確認ください。",
+      };
+    }
+
+    return {
+      success: true,
+      message:
+        "パスワードリセット用のメールを送信しました。メールをご確認ください。",
+    };
+  } catch (error) {
+    console.error("パスワードリセット処理エラー:", error);
+    return {
+      error: "パスワードリセット処理でエラーが発生しました",
     };
   }
 }
@@ -152,8 +285,12 @@ export async function signOut() {
       };
     }
 
-    // ログアウト成功後、ホームページにリダイレクト
-    redirect("/");
+    // ログアウト成功時のレスポンス
+    return {
+      success: true,
+      message: "ログアウトしました",
+      redirectTo: "/",
+    };
   } catch (error) {
     console.error("ログアウト処理エラー:", error);
     return {
