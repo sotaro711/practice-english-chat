@@ -1,54 +1,178 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { User } from "@supabase/supabase-js";
+import Link from "next/link";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    // 現在のセッションを確認
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+      setLoading(false);
+    };
+
+    checkSession();
+
+    // 認証状態の変更を監視
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="font-sans min-h-screen bg-gradient-to-br from-indigo-50 to-white">
+      {/* ヘッダー */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center">
+              <Image
+                className="dark:invert"
+                src="/next.svg"
+                alt="Next.js logo"
+                width={120}
+                height={25}
+                priority
+              />
+            </div>
+            <div className="flex items-center space-x-4">
+              {user ? (
+                <>
+                  <span className="text-sm text-gray-700">{user.email}</span>
+                  <Link
+                    href="/dashboard"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    ダッシュボード
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors"
+                  >
+                    ログアウト
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/auth/signup"
+                    className="text-indigo-600 hover:text-indigo-700 text-sm font-medium transition-colors"
+                  >
+                    新規登録
+                  </Link>
+                  <Link
+                    href="/auth/signin"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    ログイン
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* メインコンテンツ */}
+      <main className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] p-8 text-center">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-5xl font-bold text-gray-900 mb-6">ようこそ！</h1>
+
+          {user ? (
+            <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+                こんにちは、{user.email}さん！
+              </h2>
+              <p className="text-gray-600 mb-6">
+                認証が正常に完了しています。ダッシュボードでアプリケーションの機能をご利用ください。
+              </p>
+              <Link
+                href="/dashboard"
+                className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-md font-medium transition-colors"
+              >
+                ダッシュボードへ
+              </Link>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
+              <p className="text-xl text-gray-600 mb-8">
+                アプリケーションを利用するには、まずアカウントを作成してください。
+              </p>
+              <div className="flex gap-4 justify-center">
+                <Link
+                  href="/auth/signup"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-md font-medium transition-colors"
+                >
+                  新規登録
+                </Link>
+                <Link
+                  href="/auth/signin"
+                  className="border border-indigo-600 text-indigo-600 hover:bg-indigo-50 px-8 py-3 rounded-md font-medium transition-colors"
+                >
+                  ログイン
+                </Link>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">
+            <div className="text-center">
+              <div className="bg-indigo-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">🔐</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                安全な認証
+              </h3>
+              <p className="text-gray-600">
+                メール認証による安全なアカウント管理
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="bg-indigo-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">⚡</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                高速動作
+              </h3>
+              <p className="text-gray-600">Next.jsとSupabaseによる快適な体験</p>
+            </div>
+            <div className="text-center">
+              <div className="bg-indigo-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">🎨</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                モダンUI
+              </h3>
+              <p className="text-gray-600">
+                直感的で美しいユーザーインターフェース
+              </p>
+            </div>
+          </div>
         </div>
       </main>
       <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
