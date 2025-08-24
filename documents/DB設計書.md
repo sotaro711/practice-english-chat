@@ -33,7 +33,8 @@ Supabase Auth との連携で推奨されるユーザープロファイル管理
 
 ```sql
 CREATE TABLE profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT,
   display_name TEXT,
   avatar_url TEXT,
@@ -44,18 +45,19 @@ CREATE TABLE profiles (
 
 -- インデックス
 CREATE INDEX idx_profiles_username ON profiles(username);
+CREATE INDEX idx_profiles_user_id ON profiles(user_id);
 
 -- RLS ポリシー
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can view and edit their own profile" ON profiles
-  FOR ALL USING (auth.uid() = id);
+  FOR ALL USING (auth.uid() = user_id);
 
 -- 新規ユーザー作成時の自動プロファイル作成トリガー
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, username, display_name)
+  INSERT INTO profiles (user_id, username, display_name)
   VALUES (
     NEW.id,
     NEW.raw_user_meta_data->>'username',
@@ -72,7 +74,8 @@ CREATE TRIGGER on_auth_user_created
 
 | カラム名             | データ型  | 制約          | 説明                                   |
 | -------------------- | --------- | ------------- | -------------------------------------- |
-| id                   | UUID      | PRIMARY KEY   | ユーザー ID（auth.users テーブル参照） |
+| id                   | UUID      | PRIMARY KEY   | プロファイルの一意識別子               |
+| user_id              | UUID      | NOT NULL, FK  | ユーザー ID（auth.users テーブル参照） |
 | username             | TEXT      |               | ユーザー名                             |
 | display_name         | TEXT      |               | 表示名                                 |
 | avatar_url           | TEXT      |               | アバター画像 URL                       |

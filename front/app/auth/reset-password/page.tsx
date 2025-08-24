@@ -1,15 +1,28 @@
 "use client";
 
 import { resetPassword } from "@/lib/auth-actions";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const searchParams = useSearchParams();
+
+  // URLパラメータからエラーメッセージを取得して表示
+  useEffect(() => {
+    const error = searchParams.get("error");
+    if (error) {
+      setMessage({
+        type: "error",
+        text: decodeURIComponent(error),
+      });
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (formData: FormData) => {
     startTransition(async () => {
@@ -128,5 +141,24 @@ export default function ResetPasswordPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              読み込み中...
+            </h2>
+          </div>
+        </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

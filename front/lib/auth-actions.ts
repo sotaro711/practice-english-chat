@@ -101,7 +101,7 @@ export async function signUp(formData: FormData) {
   }
 }
 
-// メール確認後のコールバック処理
+// メール確認後のコールバック処理（通常のメール確認用）
 export async function handleAuthCallback(code: string) {
   if (!code) {
     return {
@@ -122,7 +122,13 @@ export async function handleAuthCallback(code: string) {
     }
 
     if (data.session) {
-      // 認証成功時のレスポンス
+      console.log("Email verification session created:", {
+        user: data.user?.id,
+        email: data.user?.email,
+        session: !!data.session,
+      });
+
+      // 通常のメール確認の場合はダッシュボードにリダイレクト
       return {
         success: true,
         message: "メール確認が完了しました",
@@ -247,7 +253,7 @@ export async function resetPassword(formData: FormData) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${
         process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
-      }/auth/callback`,
+      }/auth/password-reset-callback`,
     });
 
     if (error) {
@@ -267,6 +273,75 @@ export async function resetPassword(formData: FormData) {
     console.error("パスワードリセット処理エラー:", error);
     return {
       error: "パスワードリセット処理でエラーが発生しました",
+    };
+  }
+}
+
+// パスワード更新用のサーバーアクション（リセット後の新しいパスワード設定）
+export async function updatePassword(formData: FormData) {
+  const password = formData.get("password") as string;
+  const confirmPassword = formData.get("confirmPassword") as string;
+
+  // バリデーション
+  if (!password || !confirmPassword) {
+    return {
+      error: "パスワードと確認パスワードを入力してください",
+    };
+  }
+
+  if (password !== confirmPassword) {
+    return {
+      error: "パスワードが一致しません",
+    };
+  }
+
+  if (password.length < 6) {
+    return {
+      error: "パスワードは6文字以上で入力してください",
+    };
+  }
+
+  try {
+    const supabase = createServerClient();
+
+    // パスワードを更新（セッション確認を削除）
+    // パスワードリセットフローでは、既にメール認証が完了しているため
+    const { error } = await supabase.auth.updateUser({
+      password: password,
+    });
+
+    if (error) {
+      console.error("パスワード更新エラー:", error);
+
+      // よくあるエラーを日本語に翻訳
+      if (error.message.includes("Password should be at least")) {
+        return {
+          error: "パスワードは6文字以上で入力してください",
+        };
+      }
+
+      if (error.message.includes("New password should be different")) {
+        return {
+          error: "新しいパスワードは現在のパスワードと異なる必要があります",
+        };
+      }
+
+      return {
+        error: "パスワードの更新に失敗しました。もう一度お試しください。",
+      };
+    }
+
+    return {
+      success: true,
+      message: "パスワードが正常に更新されました",
+      redirectTo: "/dashboard",
+    };
+  } catch (error) {
+    console.error("パスワード更新処理エラー:", error);
+    return {
+      error: `パスワード更新エラー: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
     };
   }
 }
