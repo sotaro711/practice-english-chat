@@ -22,8 +22,16 @@ Supabase Auth を使用する場合、ユーザー情報は `auth.users` テー�
 
 - 拡張性を考慮し、将来的に他言語学習にも対応可能な設計
 - Supabase Auth との連携を前提とした設計
+- チャットグループ中心の設計で、ユーザーが複数のテーマやプロジェクト別にチャットを整理可能
 - パフォーマンスを考慮したインデックス設計
 - データの整合性を保つための外部キー制約
+
+### 2.3. 主要な関係性
+
+- **profiles**: ユーザープロファイル情報（auth.users と 1:1）
+- **chat_groups**: チャットグループ（profiles と 1:多）
+- **chat_messages**: チャットメッセージ（chat_groups と 1:多）
+- **bookmarks**: ブックマーク（profiles と chat_messages の多:多関係）
 
 ## 3. テーブル設計
 
@@ -83,57 +91,65 @@ CREATE TRIGGER on_auth_user_created
 | created_at           | TIMESTAMP | DEFAULT NOW() | 作成日時                               |
 | updated_at           | TIMESTAMP | DEFAULT NOW() | 更新日時                               |
 
-### 3.2. conversations（会話テーブル）
+### 3.2. chat_groups（チャットグループテーブル）
 
-ユーザーと AI の会話セッションを管理するテーブル
+ユーザーのチャットグループを管理するテーブル。各プロファイルが複数のチャットグループを持つことができます。
 
 ```sql
-CREATE TABLE conversations (
+CREATE TABLE chat_groups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title VARCHAR(255),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- インデックス
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX idx_conversations_created_at ON conversations(created_at);
+CREATE INDEX idx_chat_groups_profile_id ON chat_groups(profile_id);
+CREATE INDEX idx_chat_groups_created_at ON chat_groups(created_at);
+CREATE INDEX idx_chat_groups_is_active ON chat_groups(is_active);
 ```
 
-| カラム名   | データ型     | 制約          | 説明                                     |
-| ---------- | ------------ | ------------- | ---------------------------------------- |
-| id         | UUID         | PRIMARY KEY   | 会話の一意識別子                         |
-| user_id    | UUID         | NOT NULL, FK  | ユーザー ID（auth.users テーブル参照）   |
-| title      | VARCHAR(255) |               | 会話のタイトル（自動生成または手動設定） |
-| created_at | TIMESTAMP    | DEFAULT NOW() | 作成日時                                 |
-| updated_at | TIMESTAMP    | DEFAULT NOW() | 更新日時                                 |
+| カラム名    | データ型     | 制約          | 説明                                     |
+| ----------- | ------------ | ------------- | ---------------------------------------- |
+| id          | UUID         | PRIMARY KEY   | チャットグループの一意識別子             |
+| profile_id  | UUID         | NOT NULL, FK  | プロファイル ID（profiles テーブル参照） |
+| name        | VARCHAR(255) | NOT NULL      | チャットグループ名                       |
+| description | TEXT         |               | チャットグループの説明                   |
+| is_active   | BOOLEAN      | DEFAULT true  | アクティブ状態フラグ                     |
+| created_at  | TIMESTAMP    | DEFAULT NOW() | 作成日時                                 |
+| updated_at  | TIMESTAMP    | DEFAULT NOW() | 更新日時                                 |
 
-### 3.3. messages（メッセージテーブル）
+### 3.3. chat_messages（チャットメッセージテーブル）
 
-チャット内の個別メッセージを管理するテーブル
+チャットグループ内の個別メッセージを管理するテーブル
 
 ```sql
-CREATE TABLE messages (
+CREATE TABLE chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  chat_group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
   role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- インデックス
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_messages_created_at ON messages(created_at);
+CREATE INDEX idx_chat_messages_chat_group_id ON chat_messages(chat_group_id);
+CREATE INDEX idx_chat_messages_created_at ON chat_messages(created_at);
+CREATE INDEX idx_chat_messages_role ON chat_messages(role);
 ```
 
-| カラム名        | データ型    | 制約            | 説明                                            |
-| --------------- | ----------- | --------------- | ----------------------------------------------- |
-| id              | UUID        | PRIMARY KEY     | メッセージの一意識別子                          |
-| conversation_id | UUID        | NOT NULL, FK    | 会話 ID                                         |
-| role            | VARCHAR(20) | NOT NULL, CHECK | メッセージの送信者（'user' または 'assistant'） |
-| content         | TEXT        | NOT NULL        | メッセージ内容                                  |
-| created_at      | TIMESTAMP   | DEFAULT NOW()   | 作成日時                                        |
+| カラム名      | データ型    | 制約            | 説明                                            |
+| ------------- | ----------- | --------------- | ----------------------------------------------- |
+| id            | UUID        | PRIMARY KEY     | メッセージの一意識別子                          |
+| chat_group_id | UUID        | NOT NULL, FK    | チャットグループ ID                             |
+| role          | VARCHAR(20) | NOT NULL, CHECK | メッセージの送信者（'user' または 'assistant'） |
+| content       | TEXT        | NOT NULL        | メッセージ内容                                  |
+| metadata      | JSONB       | DEFAULT {}      | メッセージの追加情報（AI モデル情報等）         |
+| created_at    | TIMESTAMP   | DEFAULT NOW()   | 作成日時                                        |
 
 ### 3.4. bookmarks（ブックマークテーブル）
 
@@ -142,24 +158,26 @@ CREATE INDEX idx_messages_created_at ON messages(created_at);
 ```sql
 CREATE TABLE bookmarks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  chat_message_id UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, message_id)
+  UNIQUE(profile_id, chat_message_id)
 );
 
 -- インデックス
-CREATE INDEX idx_bookmarks_user_id ON bookmarks(user_id);
-CREATE INDEX idx_bookmarks_message_id ON bookmarks(message_id);
+CREATE INDEX idx_bookmarks_profile_id ON bookmarks(profile_id);
+CREATE INDEX idx_bookmarks_chat_message_id ON bookmarks(chat_message_id);
 CREATE INDEX idx_bookmarks_created_at ON bookmarks(created_at);
 ```
 
-| カラム名   | データ型  | 制約          | 説明                            |
-| ---------- | --------- | ------------- | ------------------------------- |
-| id         | UUID      | PRIMARY KEY   | ブックマークの一意識別子        |
-| user_id    | UUID      | NOT NULL, FK  | ユーザー ID                     |
-| message_id | UUID      | NOT NULL, FK  | ブックマークされたメッセージ ID |
-| created_at | TIMESTAMP | DEFAULT NOW() | ブックマーク作成日時            |
+| カラム名        | データ型  | 制約          | 説明                                    |
+| --------------- | --------- | ------------- | --------------------------------------- |
+| id              | UUID      | PRIMARY KEY   | ブックマークの一意識別子                |
+| profile_id      | UUID      | NOT NULL, FK  | プロファイル ID                         |
+| chat_message_id | UUID      | NOT NULL, FK  | ブックマークされたチャットメッセージ ID |
+| notes           | TEXT      |               | ブックマークのメモ                      |
+| created_at      | TIMESTAMP | DEFAULT NOW() | ブックマーク作成日時                    |
 
 ## 4. Row Level Security (RLS) ポリシー
 
@@ -171,28 +189,34 @@ Supabase のセキュリティ機能を活用したアクセス制御
 -- 上記で既に設定済み
 ```
 
-### 4.2. conversations テーブル
+### 4.2. chat_groups テーブル
 
 ```sql
 -- RLSを有効化
-ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_groups ENABLE ROW LEVEL SECURITY;
 
--- ユーザーは自分の会話のみアクセス可能
-CREATE POLICY "Users can access their own conversations" ON conversations
-  FOR ALL USING (auth.uid() = user_id);
+-- ユーザーは自分のプロファイルのチャットグループのみアクセス可能
+CREATE POLICY "Users can access their own chat groups" ON chat_groups
+  FOR ALL USING (
+    profile_id IN (
+      SELECT id FROM profiles WHERE user_id = auth.uid()
+    )
+  );
 ```
 
-### 4.3. messages テーブル
+### 4.3. chat_messages テーブル
 
 ```sql
 -- RLSを有効化
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
--- ユーザーは自分の会話のメッセージのみアクセス可能
-CREATE POLICY "Users can access messages in their conversations" ON messages
+-- ユーザーは自分のチャットグループのメッセージのみアクセス可能
+CREATE POLICY "Users can access messages in their chat groups" ON chat_messages
   FOR ALL USING (
-    conversation_id IN (
-      SELECT id FROM conversations WHERE user_id = auth.uid()
+    chat_group_id IN (
+      SELECT cg.id FROM chat_groups cg
+      JOIN profiles p ON cg.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 ```
@@ -203,9 +227,13 @@ CREATE POLICY "Users can access messages in their conversations" ON messages
 -- RLSを有効化
 ALTER TABLE bookmarks ENABLE ROW LEVEL SECURITY;
 
--- ユーザーは自分のブックマークのみアクセス可能
+-- ユーザーは自分のプロファイルのブックマークのみアクセス可能
 CREATE POLICY "Users can access their own bookmarks" ON bookmarks
-  FOR ALL USING (auth.uid() = user_id);
+  FOR ALL USING (
+    profile_id IN (
+      SELECT id FROM profiles WHERE user_id = auth.uid()
+    )
+  );
 ```
 
 ## 5. ビュー定義
@@ -218,17 +246,50 @@ CREATE POLICY "Users can access their own bookmarks" ON bookmarks
 CREATE OR REPLACE VIEW user_bookmarks_view AS
 SELECT
   b.id as bookmark_id,
-  b.user_id,
+  b.profile_id,
+  b.notes,
   b.created_at as bookmarked_at,
-  m.id as message_id,
-  m.content as message_content,
-  m.role as message_role,
-  c.id as conversation_id,
-  c.title as conversation_title
+  cm.id as chat_message_id,
+  cm.content as message_content,
+  cm.role as message_role,
+  cm.metadata as message_metadata,
+  cg.id as chat_group_id,
+  cg.name as chat_group_name,
+  cg.description as chat_group_description
 FROM bookmarks b
-JOIN messages m ON b.message_id = m.id
-JOIN conversations c ON m.conversation_id = c.id
+JOIN chat_messages cm ON b.chat_message_id = cm.id
+JOIN chat_groups cg ON cm.chat_group_id = cg.id
 ORDER BY b.created_at DESC;
+```
+
+### 5.2. chat_group_summary_view
+
+チャットグループの概要表示用のビュー
+
+```sql
+CREATE OR REPLACE VIEW chat_group_summary_view AS
+SELECT
+  cg.id as chat_group_id,
+  cg.profile_id,
+  cg.name as chat_group_name,
+  cg.description,
+  cg.is_active,
+  cg.created_at as group_created_at,
+  cg.updated_at as group_updated_at,
+  COUNT(cm.id) as message_count,
+  MAX(cm.created_at) as last_message_at,
+  COALESCE(
+    (SELECT cm2.content
+     FROM chat_messages cm2
+     WHERE cm2.chat_group_id = cg.id
+     ORDER BY cm2.created_at DESC
+     LIMIT 1),
+    ''
+  ) as last_message_content
+FROM chat_groups cg
+LEFT JOIN chat_messages cm ON cg.id = cm.chat_group_id
+GROUP BY cg.id, cg.profile_id, cg.name, cg.description, cg.is_active, cg.created_at, cg.updated_at
+ORDER BY MAX(cm.created_at) DESC NULLS LAST;
 ```
 
 ## 6. 初期化スクリプト
@@ -238,9 +299,9 @@ ORDER BY b.created_at DESC;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- テーブル作成（上記の順序で実行）
--- 1. profiles
--- 2. conversations
--- 3. messages
+-- 1. profiles (Supabase Authと連携)
+-- 2. chat_groups
+-- 3. chat_messages
 -- 4. bookmarks
 
 -- RLSポリシーの設定
@@ -248,6 +309,21 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- サンプルデータ（開発環境用）
 -- 本番環境では実行しない
+
+-- テーブル作成順序例:
+-- CREATE TABLE profiles (...);
+-- CREATE TABLE chat_groups (...);
+-- CREATE TABLE chat_messages (...);
+-- CREATE TABLE bookmarks (...);
+
+-- RLSポリシー設定
+-- ALTER TABLE chat_groups ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE bookmarks ENABLE ROW LEVEL SECURITY;
+
+-- ビュー作成
+-- CREATE OR REPLACE VIEW user_bookmarks_view AS ...;
+-- CREATE OR REPLACE VIEW chat_group_summary_view AS ...;
 ```
 
 ## 7. パフォーマンス考慮事項
@@ -277,10 +353,12 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ## 9. データ型とサイズ制限
 
-| テーブル      | カラム  | 制限     | 理由                       |
-| ------------- | ------- | -------- | -------------------------- |
-| conversations | title   | 255 文字 | 一般的な会話タイトルの長さ |
-| messages      | content | TEXT     | 長文メッセージに対応       |
+| テーブル      | カラム      | 制限     | 理由                             |
+| ------------- | ----------- | -------- | -------------------------------- |
+| chat_groups   | name        | 255 文字 | 一般的なチャットグループ名の長さ |
+| chat_groups   | description | TEXT     | 詳細な説明に対応                 |
+| chat_messages | content     | TEXT     | 長文メッセージに対応             |
+| bookmarks     | notes       | TEXT     | 詳細なメモに対応                 |
 
 ## 10. 運用考慮事項
 
@@ -291,8 +369,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ### 10.2. モニタリング
 
-- 会話数、メッセージ数、ブックマーク数の監視
+- チャットグループ数、メッセージ数、ブックマーク数の監視
 - パフォーマンスメトリクスの追跡
+- アクティブなチャットグループの使用状況監視
 
 ---
 
