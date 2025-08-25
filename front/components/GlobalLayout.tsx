@@ -43,14 +43,26 @@ export default function GlobalLayout({ children }: GlobalLayoutProps) {
   // 認証済みの場合はサイドバー付きレイアウトで表示
   console.log("🎛️ Showing authenticated layout with sidebar");
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* サイドバー */}
-      <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} />
+    <div className="h-screen bg-gray-50">
+      {/* PC版レイアウト: サイドバー + メインコンテンツ */}
+      <div className="hidden lg:flex h-full">
+        {/* PC版固定サイドバー */}
+        <div className="w-[250px] flex-shrink-0">
+          <Sidebar isOpen={true} onClose={closeSidebar} />
+        </div>
 
-      {/* メインコンテンツエリア */}
-      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+        {/* PC版メインコンテンツ */}
+        <div className="flex-1 overflow-hidden">
+          <main className="h-full overflow-y-auto max-w-4xl mx-auto">
+            {children}
+          </main>
+        </div>
+      </div>
+
+      {/* モバイル版レイアウト */}
+      <div className="lg:hidden h-full flex flex-col">
         {/* モバイル用ヘッダー */}
-        <header className="bg-white shadow-sm border-b border-gray-200 lg:hidden">
+        <header className="bg-white shadow-sm border-b border-gray-200">
           <div className="flex items-center justify-between h-16 px-4">
             <button
               onClick={toggleSidebar}
@@ -66,8 +78,11 @@ export default function GlobalLayout({ children }: GlobalLayoutProps) {
           </div>
         </header>
 
-        {/* メインコンテンツ */}
+        {/* モバイル版メインコンテンツ */}
         <main className="flex-1 overflow-y-auto">{children}</main>
+
+        {/* モバイル版サイドバー（オーバーレイ） */}
+        <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} />
       </div>
     </div>
   );

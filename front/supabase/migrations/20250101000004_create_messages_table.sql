@@ -1,4 +1,4 @@
--- Create messages table for storing individual chat messages
+-- Create messages table
 CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -7,17 +7,19 @@ CREATE TABLE messages (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create indexes for better performance
+-- Create indexes
 CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX idx_messages_created_at ON messages(created_at);
 
--- Enable Row Level Security
+-- Enable RLS
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policy - users can only access messages in their own conversations
-CREATE POLICY "Users can access messages in their conversations" ON messages
+-- Create RLS policy
+CREATE POLICY "Users can access messages from their conversations" ON messages
   FOR ALL USING (
-    conversation_id IN (
-      SELECT id FROM conversations WHERE user_id = auth.uid()
+    EXISTS (
+      SELECT 1 FROM conversations c 
+      WHERE c.id = messages.conversation_id 
+      AND c.user_id = auth.uid()
     )
   );

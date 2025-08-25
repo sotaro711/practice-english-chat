@@ -1,5 +1,4 @@
--- Create user_bookmarks_view for displaying bookmark list with message details
--- This view joins bookmarks with messages and conversations to provide comprehensive bookmark information
+-- Create user_bookmarks_view for bookmark listing
 CREATE OR REPLACE VIEW user_bookmarks_view AS
 SELECT
   b.id as bookmark_id,
