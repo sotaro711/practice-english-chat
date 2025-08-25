@@ -1,197 +1,227 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+// モックデータ - APIとの接続後に削除予定
+const mockBookmarks = [
+  {
+    id: 1,
+    english: "Let's get started",
+    japanese: "始めましょう",
+    createdAt: "2024-01-15T10:30:00Z",
+  },
+  {
+    id: 2,
+    english: "I'd like to add something to the agenda",
+    japanese: "議題に何か追加したいと思います",
+    createdAt: "2024-01-15T11:45:00Z",
+  },
+  {
+    id: 3,
+    english: "What do you think?",
+    japanese: "いかがでしょうか？",
+    createdAt: "2024-01-15T14:20:00Z",
+  },
+  {
+    id: 4,
+    english: "Could you please clarify that?",
+    japanese: "それを明確にしていただけますか？",
+    createdAt: "2024-01-15T15:10:00Z",
+  },
+  {
+    id: 5,
+    english: "I'm looking forward to working with you",
+    japanese: "一緒に働けることを楽しみにしています",
+    createdAt: "2024-01-15T16:30:00Z",
+  },
+];
 
 interface Bookmark {
-  id: string;
-  english_text: string;
-  japanese_text: string;
-  created_at: string;
+  id: number;
+  english: string;
+  japanese: string;
+  createdAt: string;
+}
+
+interface DeleteModalProps {
+  bookmark: Bookmark | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+function DeleteModal({
+  bookmark,
+  isOpen,
+  onClose,
+  onConfirm,
+}: DeleteModalProps) {
+  if (!isOpen || !bookmark) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          ブックマークを削除
+        </h3>
+        <p className="text-gray-600 mb-6">
+          「{bookmark.english}」を削除しますか？
+          <br />
+          この操作は取り消せません。
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >
+            いいえ
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+          >
+            はい
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface BookmarkCardProps {
+  bookmark: Bookmark;
+  onPlay: (text: string) => void;
+  onDelete: (bookmark: Bookmark) => void;
+}
+
+function BookmarkCard({ bookmark, onPlay, onDelete }: BookmarkCardProps) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-lg font-medium text-gray-900 mb-2 break-words">
+            {bookmark.english}
+          </div>
+          <div className="text-gray-600 break-words">{bookmark.japanese}</div>
+          <div className="text-xs text-gray-400 mt-2">
+            {new Date(bookmark.createdAt).toLocaleDateString("ja-JP", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </div>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button
+            onClick={() => onPlay(bookmark.english)}
+            className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title="音声再生"
+          >
+            ♪
+          </button>
+          <button
+            onClick={() => onDelete(bookmark)}
+            className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+            title="削除"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function BookmarksPage() {
-  const { user, isAuthenticated, loading } = useAuth();
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
-  const router = useRouter();
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(mockBookmarks);
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    bookmark: Bookmark | null;
+  }>({
+    isOpen: false,
+    bookmark: null,
+  });
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/auth/login");
+  // 音声再生機能（モック）
+  const handlePlay = (text: string) => {
+    console.log("音声再生:", text);
+    // TODO: Web Speech API での音声再生実装
+    if ("speechSynthesis" in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      speechSynthesis.speak(utterance);
+    } else {
+      alert("お使いのブラウザは音声再生に対応していません");
     }
-  }, [isAuthenticated, loading, router]);
+  };
 
-  useEffect(() => {
-    if (user) {
-      loadBookmarks();
+  // 削除機能
+  const handleDelete = (bookmark: Bookmark) => {
+    setDeleteModal({
+      isOpen: true,
+      bookmark,
+    });
+  };
+
+  const confirmDelete = () => {
+    if (deleteModal.bookmark) {
+      setBookmarks((prev) =>
+        prev.filter((b) => b.id !== deleteModal.bookmark!.id)
+      );
+      setDeleteModal({ isOpen: false, bookmark: null });
     }
-  }, [user]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            AIチャット英語学習システム
-          </h2>
-          <p className="text-gray-600">読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
-  const loadBookmarks = async () => {
-    // モックデータ（実際の実装では Supabase から取得）
-    const mockBookmarks: Bookmark[] = [
-      {
-        id: "1",
-        english_text: "Let's get started",
-        japanese_text: "始めましょう",
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: "2",
-        english_text: "I'd like to add some suggestions",
-        japanese_text: "いくつかの提案を追加したいと思います",
-        created_at: new Date().toISOString(),
-      },
-      {
-        id: "3",
-        english_text: "What do you think about this?",
-        japanese_text: "これについてどう思いますか？",
-        created_at: new Date().toISOString(),
-      },
-    ];
-
-    setBookmarks(mockBookmarks);
   };
 
-  const playAudio = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    speechSynthesis.speak(utterance);
-  };
-
-  const handleDelete = async (bookmarkId: string) => {
-    // 実際の実装では Supabase から削除
-    setBookmarks(bookmarks.filter((bookmark) => bookmark.id !== bookmarkId));
-    setShowDeleteModal(null);
-  };
-
-  const confirmDelete = (bookmarkId: string) => {
-    setShowDeleteModal(bookmarkId);
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, bookmark: null });
   };
 
   return (
-    <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* ヘッダー */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            ブックマーク一覧
-          </h1>
-          <p className="text-gray-600">
-            保存した英語フレーズを確認・復習できます
-          </p>
-        </div>
+    <div className="max-w-4xl mx-auto p-4 md:p-6">
+      {/* ヘッダー */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          📚 ブックマーク
+        </h1>
+        <p className="text-gray-600">保存した英文を確認・復習しましょう</p>
+      </div>
 
-        {/* ブックマークリスト */}
+      {/* ブックマーク一覧 */}
+      <div className="space-y-4">
         {bookmarks.length === 0 ? (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">📚</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              ブックマークがありません
-            </h3>
-            <p className="text-gray-600 mb-6">
-              チャット画面で気に入ったフレーズを保存してみましょう
+            <div className="text-gray-400 text-lg mb-2">📝</div>
+            <p className="text-gray-500 mb-4">まだブックマークがありません</p>
+            <p className="text-sm text-gray-400">
+              チャット画面で⭐アイコンをクリックして英文を保存しましょう
             </p>
-            <button
-              onClick={() => router.push("/chat")}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <span className="mr-2">🏠</span>
-              チャットに戻る
-            </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <>
+            <div className="text-sm text-gray-500 mb-4">
+              {bookmarks.length}件のブックマーク
+            </div>
             {bookmarks.map((bookmark) => (
-              <div
+              <BookmarkCard
                 key={bookmark.id}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <p className="text-lg font-medium text-gray-900 mb-2">
-                      &ldquo;{bookmark.english_text}&rdquo;
-                    </p>
-                    <p className="text-gray-600 mb-3">
-                      「{bookmark.japanese_text}」
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      保存日時:{" "}
-                      {new Date(bookmark.created_at).toLocaleDateString(
-                        "ja-JP"
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      onClick={() => playAudio(bookmark.english_text)}
-                      className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="音声再生"
-                    >
-                      <span className="text-lg">♪</span>
-                    </button>
-                    <button
-                      onClick={() => confirmDelete(bookmark.id)}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="削除"
-                    >
-                      <span className="text-lg">✕</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+                bookmark={bookmark}
+                onPlay={handlePlay}
+                onDelete={handleDelete}
+              />
             ))}
-          </div>
+          </>
         )}
       </div>
 
       {/* 削除確認モーダル */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              ブックマークを削除
-            </h3>
-            <p className="text-gray-600 mb-6">
-              このブックマークを削除しますか？
-              <br />
-              この操作は取り消せません。
-            </p>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowDeleteModal(null)}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={() => handleDelete(showDeleteModal)}
-                className="flex-1 px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
-              >
-                削除
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteModal
+        bookmark={deleteModal.bookmark}
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

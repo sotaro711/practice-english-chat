@@ -1,6 +1,8 @@
 "use server";
 
 import { createServerClient } from "./supabase-server";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 // 新規登録用のフォームデータ型
 export interface SignUpFormData {
@@ -43,7 +45,7 @@ export async function signUp(formData: FormData) {
   }
 
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
     // Supabaseで新規ユーザー作成
     const { data, error } = await supabase.auth.signUp({
@@ -110,7 +112,7 @@ export async function handleAuthCallback(code: string) {
   }
 
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
@@ -154,77 +156,82 @@ export async function signIn(formData: FormData) {
 
   // バリデーション
   if (!email || !password) {
-    return {
-      error: "メールアドレスとパスワードを入力してください",
-    };
+    redirect(
+      "/auth/login?error=" +
+        encodeURIComponent("メールアドレスとパスワードを入力してください")
+    );
   }
 
   // メールアドレスの基本的なバリデーション
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    return {
-      error: "有効なメールアドレスを入力してください",
-    };
+    redirect(
+      "/auth/login?error=" +
+        encodeURIComponent("有効なメールアドレスを入力してください")
+    );
   }
 
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
-    // Supabaseでログイン
+    // Supabaseでログイン（cookieベースのセッション管理）
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      console.error("ログインエラー:", error);
+      console.error("❌ ログインエラー:", error);
+
+      let errorMessage =
+        "ログインに失敗しました。メールアドレスとパスワードをご確認ください。";
 
       // よくあるエラーを日本語に翻訳
       if (error.message.includes("Invalid login credentials")) {
-        return {
-          error: "メールアドレスまたはパスワードが正しくありません",
-        };
+        errorMessage = "メールアドレスまたはパスワードが正しくありません";
+      } else if (error.message.includes("Email not confirmed")) {
+        errorMessage =
+          "メール確認が完了していません。確認メールをご確認ください。";
+      } else if (error.message.includes("Too many requests")) {
+        errorMessage =
+          "ログイン試行回数が多すぎます。しばらく時間をおいてから再度お試しください。";
       }
 
-      if (error.message.includes("Email not confirmed")) {
-        return {
-          error: "メール確認が完了していません。確認メールをご確認ください。",
-        };
-      }
-
-      if (error.message.includes("Too many requests")) {
-        return {
-          error:
-            "ログイン試行回数が多すぎます。しばらく時間をおいてから再度お試しください。",
-        };
-      }
-
-      return {
-        error:
-          "ログインに失敗しました。メールアドレスとパスワードをご確認ください。",
-      };
+      redirect("/auth/login?error=" + encodeURIComponent(errorMessage));
     }
 
     if (data.user && data.session) {
-      // ログイン成功時のレスポンス
-      return {
-        success: true,
-        message: "ログインに成功しました",
-        user: data.user,
-        redirectTo: "/dashboard",
-      };
+      console.log("✅ Login successful:", {
+        userId: data.user.id,
+        email: data.user.email,
+      });
+
+      // パスをリバリデートしてキャッシュを更新
+      revalidatePath("/", "layout");
+
+      // ダッシュボードにリダイレクト
+      redirect("/dashboard");
     }
 
-    return {
-      error: "ログイン処理で予期しないエラーが発生しました",
-    };
+    redirect(
+      "/auth/login?error=" +
+        encodeURIComponent("ログイン処理で予期しないエラーが発生しました")
+    );
   } catch (error) {
-    console.error("サーバーアクションエラー:", error);
-    return {
-      error: `サーバーエラー: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
-    };
+    // redirectのエラーは正常な動作なので再スロー
+    if (error instanceof Error && error.message === "NEXT_REDIRECT") {
+      throw error;
+    }
+
+    console.error("❌ サーバーアクションエラー:", error);
+    redirect(
+      "/auth/login?error=" +
+        encodeURIComponent(
+          `サーバーエラー: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        )
+    );
   }
 }
 
@@ -248,7 +255,7 @@ export async function resetPassword(formData: FormData) {
   }
 
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${
@@ -302,7 +309,7 @@ export async function updatePassword(formData: FormData) {
   }
 
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
     // パスワードを更新（セッション確認を削除）
     // パスワードリセットフローでは、既にメール認証が完了しているため
@@ -349,7 +356,7 @@ export async function updatePassword(formData: FormData) {
 // ログアウト用のサーバーアクション
 export async function signOut() {
   try {
-    const supabase = createServerClient();
+    const supabase = await createServerClient();
 
     const { error } = await supabase.auth.signOut();
 
@@ -360,13 +367,17 @@ export async function signOut() {
       };
     }
 
-    // ログアウト成功時のレスポンス
-    return {
-      success: true,
-      message: "ログアウトしました",
-      redirectTo: "/",
-    };
+    // パスをリバリデートしてキャッシュを更新
+    revalidatePath("/", "layout");
+
+    // ホームページにリダイレクト
+    redirect("/");
   } catch (error) {
+    // redirectのエラーは正常な動作なので再スロー
+    if (error instanceof Error && error.message === "NEXT_REDIRECT") {
+      throw error;
+    }
+
     console.error("ログアウト処理エラー:", error);
     return {
       error: "ログアウト処理でエラーが発生しました",

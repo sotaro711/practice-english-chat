@@ -1,6 +1,64 @@
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          username: string | null;
+          display_name: string | null;
+          avatar_url: string | null;
+          learning_preferences: any;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          username?: string | null;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          learning_preferences?: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          username?: string | null;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          learning_preferences?: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      chat_groups: {
+        Row: {
+          id: string;
+          profile_id: string;
+          title: string | null;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          title?: string | null;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          profile_id?: string;
+          title?: string | null;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       bookmarks: {
         Row: {
           id: string;

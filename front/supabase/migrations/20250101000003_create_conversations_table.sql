@@ -18,7 +18,7 @@ ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can access their own conversations" ON conversations
   FOR ALL USING (auth.uid() = user_id);
 
--- Create trigger to automatically update updated_at
+-- Create trigger to automatically update updated_at for conversations
 -- Note: update_updated_at_column() function is defined in the profiles migration
 CREATE TRIGGER update_conversations_updated_at
   BEFORE UPDATE ON conversations

@@ -135,35 +135,7 @@ CREATE INDEX idx_messages_created_at ON messages(created_at);
 | content         | TEXT        | NOT NULL        | メッセージ内容                                  |
 | created_at      | TIMESTAMP   | DEFAULT NOW()   | 作成日時                                        |
 
-### 3.4. ai_suggestions（AI 提案メッセージテーブル）
-
-AI が生成する 3 つの英語表現提案を管理するテーブル
-
-```sql
-CREATE TABLE ai_suggestions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-  english_text TEXT NOT NULL,
-  japanese_translation TEXT NOT NULL,
-  suggestion_order INTEGER NOT NULL CHECK (suggestion_order BETWEEN 1 AND 3),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(message_id, suggestion_order)
-);
-
--- インデックス
-CREATE INDEX idx_ai_suggestions_message_id ON ai_suggestions(message_id);
-```
-
-| カラム名             | データ型  | 制約            | 説明              |
-| -------------------- | --------- | --------------- | ----------------- |
-| id                   | UUID      | PRIMARY KEY     | 提案の一意識別子  |
-| message_id           | UUID      | NOT NULL, FK    | 親メッセージ ID   |
-| english_text         | TEXT      | NOT NULL        | 英語表現          |
-| japanese_translation | TEXT      | NOT NULL        | 日本語訳          |
-| suggestion_order     | INTEGER   | NOT NULL, CHECK | 提案の順序（1-3） |
-| created_at           | TIMESTAMP | DEFAULT NOW()   | 作成日時          |
-
-### 3.5. bookmarks（ブックマークテーブル）
+### 3.4. bookmarks（ブックマークテーブル）
 
 ユーザーが保存した学習コンテンツを管理するテーブル
 
@@ -171,22 +143,23 @@ CREATE INDEX idx_ai_suggestions_message_id ON ai_suggestions(message_id);
 CREATE TABLE bookmarks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  ai_suggestion_id UUID NOT NULL REFERENCES ai_suggestions(id) ON DELETE CASCADE,
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, ai_suggestion_id)
+  UNIQUE(user_id, message_id)
 );
 
 -- インデックス
 CREATE INDEX idx_bookmarks_user_id ON bookmarks(user_id);
+CREATE INDEX idx_bookmarks_message_id ON bookmarks(message_id);
 CREATE INDEX idx_bookmarks_created_at ON bookmarks(created_at);
 ```
 
-| カラム名         | データ型  | 制約          | 説明                     |
-| ---------------- | --------- | ------------- | ------------------------ |
-| id               | UUID      | PRIMARY KEY   | ブックマークの一意識別子 |
-| user_id          | UUID      | NOT NULL, FK  | ユーザー ID              |
-| ai_suggestion_id | UUID      | NOT NULL, FK  | 提案メッセージ ID        |
-| created_at       | TIMESTAMP | DEFAULT NOW() | ブックマーク作成日時     |
+| カラム名   | データ型  | 制約          | 説明                            |
+| ---------- | --------- | ------------- | ------------------------------- |
+| id         | UUID      | PRIMARY KEY   | ブックマークの一意識別子        |
+| user_id    | UUID      | NOT NULL, FK  | ユーザー ID                     |
+| message_id | UUID      | NOT NULL, FK  | ブックマークされたメッセージ ID |
+| created_at | TIMESTAMP | DEFAULT NOW() | ブックマーク作成日時            |
 
 ## 4. Row Level Security (RLS) ポリシー
 
@@ -224,24 +197,7 @@ CREATE POLICY "Users can access messages in their conversations" ON messages
   );
 ```
 
-### 4.4. ai_suggestions テーブル
-
-```sql
--- RLSを有効化
-ALTER TABLE ai_suggestions ENABLE ROW LEVEL SECURITY;
-
--- ユーザーは自分の会話内の提案のみアクセス可能
-CREATE POLICY "Users can access suggestions in their conversations" ON ai_suggestions
-  FOR ALL USING (
-    message_id IN (
-      SELECT m.id FROM messages m
-      JOIN conversations c ON m.conversation_id = c.id
-      WHERE c.user_id = auth.uid()
-    )
-  );
-```
-
-### 4.5. bookmarks テーブル
+### 4.4. bookmarks テーブル
 
 ```sql
 -- RLSを有効化
@@ -264,16 +220,13 @@ SELECT
   b.id as bookmark_id,
   b.user_id,
   b.created_at as bookmarked_at,
-  s.id as suggestion_id,
-  s.english_text,
-  s.japanese_translation,
-  s.suggestion_order,
   m.id as message_id,
+  m.content as message_content,
+  m.role as message_role,
   c.id as conversation_id,
   c.title as conversation_title
 FROM bookmarks b
-JOIN ai_suggestions s ON b.ai_suggestion_id = s.id
-JOIN messages m ON s.message_id = m.id
+JOIN messages m ON b.message_id = m.id
 JOIN conversations c ON m.conversation_id = c.id
 ORDER BY b.created_at DESC;
 ```
@@ -288,8 +241,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. profiles
 -- 2. conversations
 -- 3. messages
--- 4. ai_suggestions
--- 5. bookmarks
+-- 4. bookmarks
 
 -- RLSポリシーの設定
 -- ビューの作成
@@ -325,12 +277,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ## 9. データ型とサイズ制限
 
-| テーブル       | カラム               | 制限     | 理由                       |
-| -------------- | -------------------- | -------- | -------------------------- |
-| conversations  | title                | 255 文字 | 一般的な会話タイトルの長さ |
-| messages       | content              | TEXT     | 長文メッセージに対応       |
-| ai_suggestions | english_text         | TEXT     | 複数文の例文に対応         |
-| ai_suggestions | japanese_translation | TEXT     | 詳細な翻訳に対応           |
+| テーブル      | カラム  | 制限     | 理由                       |
+| ------------- | ------- | -------- | -------------------------- |
+| conversations | title   | 255 文字 | 一般的な会話タイトルの長さ |
+| messages      | content | TEXT     | 長文メッセージに対応       |
 
 ## 10. 運用考慮事項
 

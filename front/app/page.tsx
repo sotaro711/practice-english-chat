@@ -11,9 +11,10 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // ログイン済みの場合は自動でダッシュボードに遷移
+    // ログイン済みの場合は自動でチャットページに遷移
     if (!loading && isAuthenticated) {
-      router.push("/dashboard");
+      console.log("🏠 User is authenticated, redirecting to chat");
+      router.push("/chat");
     }
   }, [isAuthenticated, loading, router]);
 
@@ -131,13 +132,13 @@ export default function Home() {
               </div>
 
               <p className="text-gray-600 mb-6">
-                ダッシュボードでアプリケーションの機能をご利用ください。
+                AIとの対話で英語学習を始めましょう。
               </p>
               <Link
-                href="/dashboard"
+                href="/chat"
                 className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-md font-medium transition-colors"
               >
-                ダッシュボードへ
+                チャットを開始
               </Link>
             </div>
           ) : (

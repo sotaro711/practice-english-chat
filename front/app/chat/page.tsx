@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
+import { addBookmark } from "@/lib/bookmarks";
 
 interface AIResponse {
   id: string;
@@ -10,12 +11,87 @@ interface AIResponse {
   translation: string;
 }
 
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
 export default function ChatPage() {
   const { user, isAuthenticated, loading } = useAuth();
-  const [message, setMessage] = useState("");
-  const [aiResponses, setAiResponses] = useState<AIResponse[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
+  const [bookmarkingIds, setBookmarkingIds] = useState<Set<string>>(new Set());
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isSubmitting) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: chatInput,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    const currentInput = chatInput;
+    setChatInput("");
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let assistantMessage = "";
+
+        // ストリーミングレスポンスを読み取り
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          assistantMessage += chunk;
+        }
+
+        // アシスタントメッセージを追加
+        const newAssistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: assistantMessage,
+        };
+
+        setMessages((prev) => [...prev, newAssistantMessage]);
+      }
+    } catch (error) {
+      console.error("メッセージ送信エラー:", error);
+      alert(
+        `メッセージの送信に失敗しました: ${
+          error instanceof Error ? error.message : "不明なエラー"
+        }`
+      );
+
+      // エラー時にユーザーメッセージも削除
+      setMessages((prev) => prev.slice(0, -1));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -39,49 +115,66 @@ export default function ChatPage() {
 
   if (!user) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!message.trim() || isSubmitting) return;
+  // 英語フレーズと翻訳を抽出する関数
+  const parseAIResponse = (content: string): AIResponse[] => {
+    const responses: AIResponse[] = [];
+    // 番号付きリストとして整理された回答を解析
+    const lines = content.split("\n").filter((line) => line.trim());
 
-    setIsSubmitting(true);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // "1. "などの番号から始まる行を探す
+      const numberMatch = line.match(/^\d+\.\s*"([^"]+)"\s*\(([^)]+)\)/);
+      if (numberMatch) {
+        responses.push({
+          id: `response-${responses.length + 1}`,
+          text: numberMatch[1],
+          translation: numberMatch[2],
+        });
+      }
+    }
 
-    // モックのAI応答
-    const mockResponses: AIResponse[] = [
-      {
-        id: "1",
-        text: "Let's get started",
-        translation: "始めましょう",
-      },
-      {
-        id: "2",
-        text: "I'd like to add some suggestions",
-        translation: "いくつかの提案を追加したいと思います",
-      },
-      {
-        id: "3",
-        text: "What do you think about this?",
-        translation: "これについてどう思いますか？",
-      },
-    ];
-
-    // 実際のAI処理の代わりにモックデータを使用
-    setTimeout(() => {
-      setAiResponses(mockResponses);
-      setMessage("");
-      setIsSubmitting(false);
-    }, 1000);
+    return responses;
   };
 
   const handleBookmark = async (response: AIResponse) => {
-    // ブックマーク機能は後で実装
-    console.log("ブックマーク:", response);
+    try {
+      setBookmarkingIds((prev) => new Set(prev).add(response.id));
+
+      const { error } = await addBookmark(response.text, response.translation);
+
+      if (error) {
+        console.error("ブックマーク追加エラー:", error);
+        alert("ブックマークの追加に失敗しました");
+      } else {
+        alert("ブックマークに追加しました！");
+      }
+    } catch (error) {
+      console.error("ブックマーク追加エラー:", error);
+      alert("ブックマークの追加に失敗しました");
+    } finally {
+      setBookmarkingIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(response.id);
+        return newSet;
+      });
+    }
   };
 
   const playAudio = (text: string) => {
-    // Web Speech APIを使用した音声再生
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    speechSynthesis.speak(utterance);
+    try {
+      // Web Speech APIを使用した音声再生
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.rate = 0.8; // 少しゆっくり
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      speechSynthesis.speak(utterance);
+    } catch (error) {
+      console.error("音声再生エラー:", error);
+      alert("音声の再生に失敗しました");
+    }
   };
 
   return (
@@ -104,67 +197,75 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* ユーザーメッセージ（送信後に表示される） */}
-        {aiResponses.length > 0 && (
-          <div className="flex items-start space-x-3 justify-end">
-            <div className="flex-1 max-w-md">
-              <div className="bg-blue-500 text-white rounded-lg shadow-sm p-4">
-                <p>会議で使えるフレーズ</p>
-              </div>
-            </div>
-            <div className="flex-shrink-0">
-              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
-                <span className="text-gray-600 font-medium text-sm">
-                  {user.email?.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* AI応答リスト */}
-        {aiResponses.length > 0 && (
-          <div className="space-y-4">
-            {aiResponses.map((response, index) => (
-              <div key={response.id} className="flex items-start space-x-3">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white font-medium text-sm">AI</span>
+        {/* メッセージ履歴 */}
+        {messages.map((message) => (
+          <div key={message.id}>
+            {message.role === "user" && (
+              <div className="flex items-start space-x-3 justify-end mb-4">
+                <div className="flex-1 max-w-md">
+                  <div className="bg-blue-500 text-white rounded-lg shadow-sm p-4">
+                    <p>{message.content}</p>
                   </div>
                 </div>
-                <div className="flex-1">
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-500">
-                        提案 {index + 1}
-                      </span>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => playAudio(response.text)}
-                          className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
-                          title="音声再生"
-                        >
-                          ♪
-                        </button>
-                        <button
-                          onClick={() => handleBookmark(response)}
-                          className="p-1 text-gray-400 hover:text-yellow-500 transition-colors"
-                          title="ブックマーク"
-                        >
-                          ⭐
-                        </button>
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
+                    <span className="text-gray-600 font-medium text-sm">
+                      {user.email?.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {message.role === "assistant" && (
+              <div className="space-y-4 mb-4">
+                {parseAIResponse(message.content).map((response, index) => (
+                  <div key={response.id} className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                        <span className="text-white font-medium text-sm">
+                          AI
+                        </span>
                       </div>
                     </div>
-                    <p className="text-lg font-medium text-gray-900 mb-1">
-                      &ldquo;{response.text}&rdquo;
-                    </p>
-                    <p className="text-gray-600">「{response.translation}」</p>
+                    <div className="flex-1">
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-gray-500">
+                            提案 {index + 1}
+                          </span>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => playAudio(response.text)}
+                              className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+                              title="音声再生"
+                            >
+                              ♪
+                            </button>
+                            <button
+                              onClick={() => handleBookmark(response)}
+                              disabled={bookmarkingIds.has(response.id)}
+                              className="p-1 text-gray-400 hover:text-yellow-500 transition-colors disabled:opacity-50"
+                              title="ブックマーク"
+                            >
+                              {bookmarkingIds.has(response.id) ? "⏳" : "⭐"}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-lg font-medium text-gray-900 mb-1">
+                          &ldquo;{response.text}&rdquo;
+                        </p>
+                        <p className="text-gray-600">
+                          「{response.translation}」
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
+        ))}
 
         {/* ロード中 */}
         {isSubmitting && (
@@ -188,18 +289,18 @@ export default function ChatPage() {
 
       {/* 入力エリア */}
       <div className="border-t border-gray-200 bg-white p-4">
-        <form onSubmit={handleSubmit} className="flex space-x-3">
+        <form onSubmit={handleChatSubmit} className="flex space-x-3">
           <input
             type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="メッセージを入力してください..."
-            className="flex-1 min-w-0 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="学びたい英語のシチュエーションを入力してください..."
+            className="flex-1 min-w-0 px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 placeholder-gray-500"
             disabled={isSubmitting}
           />
           <button
             type="submit"
-            disabled={!message.trim() || isSubmitting}
+            disabled={!chatInput.trim() || isSubmitting}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             送信

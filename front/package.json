@@ -16,12 +16,15 @@
     "migration:new": "npx supabase migration new"
   },
   "dependencies": {
+    "@ai-sdk/google": "^2.0.8",
     "@ai-sdk/react": "^2.0.22",
+    "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.0",
     "ai": "^5.0.22",
     "next": "15.5.0",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

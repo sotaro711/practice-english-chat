@@ -59,10 +59,11 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       <div
         className={`
           fixed lg:static inset-y-0 left-0 z-50
-          flex flex-col w-64 bg-white shadow-lg border-r border-gray-200
+          flex flex-col bg-white shadow-lg border-r border-gray-200
           transform transition-transform duration-300 ease-in-out
           ${isOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
         `}
+        style={{ width: "250px" }}
       >
         {/* ヘッダー部分 */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
@@ -97,8 +98,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                   transition-colors duration-200
                   ${
                     isActive(item.href)
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
-                      : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-blue-50 text-blue-700 border-r-4 border-blue-600"
+                      : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
                   }
                 `}
               >
@@ -127,8 +128,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                   transition-colors duration-200
                   ${
                     item.href && isActive(item.href)
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
-                      : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-blue-50 text-blue-700 border-r-4 border-blue-600"
+                      : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
                   }
                   ${
                     item.id === "logout"

@@ -10,7 +10,15 @@ interface GlobalLayoutProps {
 
 export default function GlobalLayout({ children }: GlobalLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+
+  // デバッグ情報をログ出力（詳細表示）
+  console.log("🎛️ GlobalLayout render:");
+  console.log("  - Loading:", loading);
+  console.log("  - IsAuthenticated:", isAuthenticated);
+  console.log("  - HasUser:", !!user);
+  console.log("  - UserEmail:", user?.email);
+  console.log("  - UserID:", user?.id);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -22,15 +30,18 @@ export default function GlobalLayout({ children }: GlobalLayoutProps) {
 
   // ローディング中は何も変更せずそのまま表示
   if (loading) {
+    console.log("🎛️ Showing loading layout");
     return <>{children}</>;
   }
 
   // 未認証の場合はサイドバーなしで表示
   if (!isAuthenticated) {
+    console.log("🎛️ Showing unauthenticated layout");
     return <>{children}</>;
   }
 
   // 認証済みの場合はサイドバー付きレイアウトで表示
+  console.log("🎛️ Showing authenticated layout with sidebar");
   return (
     <div className="flex h-screen bg-gray-50">
       {/* サイドバー */}

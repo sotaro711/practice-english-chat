@@ -101,7 +101,7 @@ export default function Dashboard() {
                   onClick={() => router.push("/chat")}
                   className="w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
                 >
-                  🏠 AIチャット
+                  💬 AIチャット
                 </button>
                 <button
                   onClick={() => router.push("/bookmarks")}
@@ -155,7 +155,7 @@ export default function Dashboard() {
                   onClick={() => router.push("/chat")}
                   className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  <span className="mr-2">🏠</span>
+                  <span className="mr-2">💬</span>
                   チャットを開始
                 </button>
               </div>
