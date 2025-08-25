@@ -37,97 +37,111 @@ export interface Database {
         Row: {
           id: string;
           profile_id: string;
-          title: string | null;
+          name: string;
           description: string | null;
+          is_active: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           profile_id: string;
-          title?: string | null;
+          name: string;
           description?: string | null;
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           profile_id?: string;
-          title?: string | null;
+          name?: string;
           description?: string | null;
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
-        };
-      };
-      bookmarks: {
-        Row: {
-          id: string;
-          user_id: string;
-          english_text: string;
-          japanese_text: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          english_text: string;
-          japanese_text: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          english_text?: string;
-          japanese_text?: string;
-          created_at?: string;
-        };
-      };
-      chat_sessions: {
-        Row: {
-          id: string;
-          user_id: string;
-          title: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          title?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          title?: string | null;
-          created_at?: string;
         };
       };
       chat_messages: {
         Row: {
           id: string;
-          session_id: string;
+          chat_group_id: string;
           role: "user" | "assistant";
           content: string;
+          metadata: any;
           created_at: string;
         };
         Insert: {
           id?: string;
-          session_id: string;
+          chat_group_id: string;
           role: "user" | "assistant";
           content: string;
+          metadata?: any;
           created_at?: string;
         };
         Update: {
           id?: string;
-          session_id?: string;
+          chat_group_id?: string;
           role?: "user" | "assistant";
           content?: string;
+          metadata?: any;
+          created_at?: string;
+        };
+      };
+      bookmarks: {
+        Row: {
+          id: string;
+          profile_id: string;
+          chat_message_id: string;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          chat_message_id: string;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          profile_id?: string;
+          chat_message_id?: string;
+          notes?: string | null;
           created_at?: string;
         };
       };
     };
     Views: {
-      [_ in never]: never;
+      user_bookmarks_view: {
+        Row: {
+          bookmark_id: string;
+          profile_id: string;
+          notes: string | null;
+          bookmarked_at: string;
+          chat_message_id: string;
+          message_content: string;
+          message_role: "user" | "assistant";
+          message_metadata: any;
+          chat_group_id: string;
+          chat_group_name: string;
+          chat_group_description: string | null;
+        };
+      };
+      chat_group_summary_view: {
+        Row: {
+          chat_group_id: string;
+          profile_id: string;
+          chat_group_name: string;
+          description: string | null;
+          is_active: boolean;
+          group_created_at: string;
+          group_updated_at: string;
+          message_count: number;
+          last_message_at: string | null;
+          last_message_content: string;
+        };
+      };
     };
     Functions: {
       [_ in never]: never;

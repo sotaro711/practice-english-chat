@@ -1,17 +1,12 @@
-import { supabase } from "./supabase";
-import { Database } from "./database.types";
+import { createClient } from "@/lib/supabase";
+import { Database } from "@/lib/database.types";
 import { getOrCreateUserProfile } from "./profiles";
 
 type ChatGroup = Database["public"]["Tables"]["chat_groups"]["Row"];
 type ChatGroupInsert = Database["public"]["Tables"]["chat_groups"]["Insert"];
 type ChatGroupUpdate = Database["public"]["Tables"]["chat_groups"]["Update"];
-
-type Conversation = Database["public"]["Tables"]["conversations"]["Row"];
-type ConversationInsert =
-  Database["public"]["Tables"]["conversations"]["Insert"];
-
-type Message = Database["public"]["Tables"]["messages"]["Row"];
-type MessageInsert = Database["public"]["Tables"]["messages"]["Insert"];
+type ChatGroupSummary =
+  Database["public"]["Views"]["chat_group_summary_view"]["Row"];
 
 /**
  * ユーザーのプロファイルIDを取得する（存在しない場合は作成）
@@ -20,6 +15,7 @@ export async function getUserProfileId(userId: string): Promise<string | null> {
   console.log("getUserProfileId: 開始", { userId });
 
   try {
+    const supabase = createClient();
     // ユーザー情報を取得
     const { data: userInfo } = await supabase.auth.getUser();
     const email = userInfo?.user?.email;
@@ -44,51 +40,6 @@ export async function getUserProfileId(userId: string): Promise<string | null> {
 }
 
 /**
- * デバッグ用：データベーステーブルの状態確認
- */
-export async function debugDatabaseStatus(userId: string) {
-  console.log("=== データベース状態デバッグ開始 ===");
-
-  try {
-    // 1. 認証状態確認
-    const { data: sessionData } = await supabase.auth.getSession();
-    console.log("1. 認証状態:", {
-      hasSession: !!sessionData.session,
-      userId: sessionData.session?.user?.id,
-      email: sessionData.session?.user?.email,
-    });
-
-    // 2. 通常のクライアントでプロファイル確認
-    const { data: normalProfile, error: normalError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId);
-
-    console.log("2. 通常クライアントでのプロファイル確認:", {
-      normalProfile,
-      error: normalError,
-      errorCode: normalError?.code,
-      errorMessage: normalError?.message,
-      userId,
-    });
-
-    // 3. プロファイル直接確認
-    const profile = await getOrCreateUserProfile(
-      userId,
-      sessionData.session?.user?.email
-    );
-    console.log("3. プロファイル取得結果:", {
-      profile: profile ? { id: profile.id, username: profile.username } : null,
-      userId,
-    });
-  } catch (error) {
-    console.error("データベース状態確認エラー:", error);
-  }
-
-  console.log("=== データベース状態デバッグ終了 ===");
-}
-
-/**
  * ユーザーのチャットグループ一覧を取得する
  */
 export async function getChatGroups(userId: string): Promise<ChatGroup[]> {
@@ -104,11 +55,12 @@ export async function getChatGroups(userId: string): Promise<ChatGroup[]> {
     return [];
   }
 
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("chat_groups")
     .select("*")
     .eq("profile_id", profileId)
-    .order("created_at", { ascending: false });
+    .order("updated_at", { ascending: false });
 
   console.log("getChatGroups: Supabaseレスポンス", { data, error, profileId });
 
@@ -134,14 +86,77 @@ export async function getChatGroups(userId: string): Promise<ChatGroup[]> {
 }
 
 /**
+ * アクティブなチャットグループのみを取得する
+ */
+export async function getActiveChatGroups(
+  userId: string
+): Promise<ChatGroup[]> {
+  console.log("getActiveChatGroups: 開始", { userId });
+
+  const profileId = await getUserProfileId(userId);
+  if (!profileId) {
+    console.error("getActiveChatGroups: プロファイルIDが取得できませんでした", {
+      userId,
+    });
+    return [];
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("chat_groups")
+    .select("*")
+    .eq("profile_id", profileId)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("アクティブチャットグループ取得エラー:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * チャットグループの概要（メッセージ数、最新メッセージ等）を取得する
+ */
+export async function getChatGroupsSummary(
+  userId: string
+): Promise<ChatGroupSummary[]> {
+  console.log("getChatGroupsSummary: 開始", { userId });
+
+  const profileId = await getUserProfileId(userId);
+  if (!profileId) {
+    console.error(
+      "getChatGroupsSummary: プロファイルIDが取得できませんでした",
+      { userId }
+    );
+    return [];
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("chat_group_summary_view")
+    .select("*")
+    .eq("profile_id", profileId);
+
+  if (error) {
+    console.error("チャットグループ概要取得エラー:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
  * 新しいチャットグループを作成する
  */
 export async function createChatGroup(
   userId: string,
-  title?: string,
+  name: string,
   description?: string
 ): Promise<ChatGroup | null> {
-  console.log("createChatGroup: 開始", { userId, title, description });
+  console.log("createChatGroup: 開始", { userId, name, description });
 
   const profileId = await getUserProfileId(userId);
   console.log("createChatGroup: プロファイルID取得結果", { profileId, userId });
@@ -153,17 +168,15 @@ export async function createChatGroup(
     return null;
   }
 
-  const chatGroupData: ChatGroupInsert = {
-    profile_id: profileId,
-    title: title || "New Chat Group",
-    description: description,
-  };
-
-  console.log("createChatGroup: 挿入データ", chatGroupData);
-
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("chat_groups")
-    .insert([chatGroupData])
+    .insert({
+      profile_id: profileId,
+      name,
+      description,
+      is_active: true,
+    })
     .select()
     .single();
 
@@ -174,16 +187,15 @@ export async function createChatGroup(
       error,
       message: error.message,
       details: error.details,
-      hint: error.hint,
       code: error.code,
       userId,
       profileId,
-      chatGroupData,
+      name,
     });
     return null;
   }
 
-  console.log("createChatGroup: 成功", { groupId: data.id, userId });
+  console.log("createChatGroup: 成功", { chatGroup: data, userId });
   return data;
 }
 
@@ -194,6 +206,9 @@ export async function updateChatGroup(
   chatGroupId: string,
   updates: ChatGroupUpdate
 ): Promise<ChatGroup | null> {
+  console.log("updateChatGroup: 開始", { chatGroupId, updates });
+
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("chat_groups")
     .update(updates)
@@ -202,165 +217,179 @@ export async function updateChatGroup(
     .single();
 
   if (error) {
-    console.error("チャットグループ更新エラー:", error);
+    console.error("チャットグループ更新エラー:", {
+      error,
+      message: error.message,
+      chatGroupId,
+      updates,
+    });
     return null;
   }
 
+  console.log("updateChatGroup: 成功", { chatGroup: data });
   return data;
+}
+
+/**
+ * チャットグループをアーカイブする（is_activeをfalseにする）
+ */
+export async function archiveChatGroup(chatGroupId: string): Promise<boolean> {
+  console.log("archiveChatGroup: 開始", { chatGroupId });
+
+  const result = await updateChatGroup(chatGroupId, { is_active: false });
+
+  if (result) {
+    console.log("archiveChatGroup: 成功", { chatGroupId });
+    return true;
+  } else {
+    console.error("archiveChatGroup: 失敗", { chatGroupId });
+    return false;
+  }
+}
+
+/**
+ * チャットグループを復元する（is_activeをtrueにする）
+ */
+export async function restoreChatGroup(chatGroupId: string): Promise<boolean> {
+  console.log("restoreChatGroup: 開始", { chatGroupId });
+
+  const result = await updateChatGroup(chatGroupId, { is_active: true });
+
+  if (result) {
+    console.log("restoreChatGroup: 成功", { chatGroupId });
+    return true;
+  } else {
+    console.error("restoreChatGroup: 失敗", { chatGroupId });
+    return false;
+  }
 }
 
 /**
  * チャットグループを削除する
  */
 export async function deleteChatGroup(chatGroupId: string): Promise<boolean> {
+  console.log("deleteChatGroup: 開始", { chatGroupId });
+
+  const supabase = createClient();
   const { error } = await supabase
     .from("chat_groups")
     .delete()
     .eq("id", chatGroupId);
 
   if (error) {
-    console.error("チャットグループ削除エラー:", error);
+    console.error("チャットグループ削除エラー:", {
+      error,
+      message: error.message,
+      chatGroupId,
+    });
     return false;
   }
 
+  console.log("deleteChatGroup: 成功", { chatGroupId });
   return true;
 }
 
 /**
- * チャットグループ内の会話一覧を取得する
+ * 特定のチャットグループを取得する
  */
-export async function getConversations(
+export async function getChatGroup(
   chatGroupId: string
-): Promise<Conversation[]> {
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("*")
-    .eq("chat_group_id", chatGroupId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("会話取得エラー:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-/**
- * 新しい会話を作成する
- */
-export async function createConversation(
-  chatGroupId: string,
-  title?: string
-): Promise<Conversation | null> {
-  const conversationData: ConversationInsert = {
-    chat_group_id: chatGroupId,
-    title: title || "New Conversation",
-  };
-
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert([conversationData])
-    .select()
-    .single();
-
-  if (error) {
-    console.error("会話作成エラー:", error);
-    return null;
-  }
-
-  return data;
-}
-
-/**
- * 会話のメッセージ一覧を取得する
- */
-export async function getMessages(conversationId: string): Promise<Message[]> {
-  const { data, error } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("メッセージ取得エラー:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-/**
- * 新しいメッセージを追加する
- */
-export async function addMessage(
-  conversationId: string,
-  role: "user" | "assistant",
-  content: string
-): Promise<Message | null> {
-  const messageData: MessageInsert = {
-    conversation_id: conversationId,
-    role,
-    content,
-  };
-
-  const { data, error } = await supabase
-    .from("messages")
-    .insert([messageData])
-    .select()
-    .single();
-
-  if (error) {
-    console.error("メッセージ追加エラー:", error);
-    return null;
-  }
-
-  return data;
-}
-
-/**
- * デフォルトのチャットグループを取得または作成する
- */
-export async function getOrCreateDefaultChatGroup(
-  userId: string
 ): Promise<ChatGroup | null> {
-  console.log("getOrCreateDefaultChatGroup: 開始", { userId });
+  console.log("getChatGroup: 開始", { chatGroupId });
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("chat_groups")
+    .select("*")
+    .eq("id", chatGroupId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      console.log("getChatGroup: チャットグループが見つかりません", {
+        chatGroupId,
+      });
+      return null;
+    }
+    console.error("チャットグループ取得エラー:", {
+      error,
+      message: error.message,
+      chatGroupId,
+    });
+    return null;
+  }
+
+  console.log("getChatGroup: 成功", { chatGroup: data });
+  return data;
+}
+
+/**
+ * チャットグループの最終更新日時を更新する
+ */
+export async function touchChatGroup(chatGroupId: string): Promise<boolean> {
+  console.log("touchChatGroup: 開始", { chatGroupId });
+
+  const result = await updateChatGroup(chatGroupId, {
+    updated_at: new Date().toISOString(),
+  });
+
+  if (result) {
+    console.log("touchChatGroup: 成功", { chatGroupId });
+    return true;
+  } else {
+    console.error("touchChatGroup: 失敗", { chatGroupId });
+    return false;
+  }
+}
+
+/**
+ * デバッグ用：データベーステーブルの状態確認
+ */
+export async function debugDatabaseStatus(userId: string) {
+  console.log("=== データベース状態デバッグ開始 ===");
 
   try {
-    const chatGroups = await getChatGroups(userId);
-    console.log("getOrCreateDefaultChatGroup: チャットグループ取得結果", {
-      chatGroupsCount: chatGroups.length,
+    const supabase = createClient();
+
+    // 1. 認証状態確認
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log("1. 認証状態:", {
+      hasSession: !!sessionData.session,
+      userId: sessionData.session?.user?.id,
+      email: sessionData.session?.user?.email,
+    });
+
+    // 2. プロファイル確認
+    const { data: normalProfile, error: normalError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", userId);
+
+    console.log("2. プロファイル確認:", {
+      normalProfile,
+      error: normalError,
+      errorCode: normalError?.code,
+      errorMessage: normalError?.message,
       userId,
     });
 
-    // 既存のチャットグループがある場合は最初のものを返す
-    if (chatGroups.length > 0) {
-      console.log("getOrCreateDefaultChatGroup: 既存グループ見つかり", {
-        groupId: chatGroups[0].id,
-        userId,
+    // 3. チャットグループ確認
+    if (normalProfile && normalProfile.length > 0) {
+      const profileId = normalProfile[0].id;
+      const { data: chatGroups, error: chatGroupsError } = await supabase
+        .from("chat_groups")
+        .select("*")
+        .eq("profile_id", profileId);
+
+      console.log("3. チャットグループ確認:", {
+        chatGroups,
+        error: chatGroupsError,
+        profileId,
       });
-      return chatGroups[0];
     }
-
-    // ない場合はデフォルトのチャットグループを作成
-    console.log("getOrCreateDefaultChatGroup: デフォルトグループ作成中", {
-      userId,
-    });
-    const newGroup = await createChatGroup(
-      userId,
-      "Default Group",
-      "Default chat group for conversations"
-    );
-
-    console.log("getOrCreateDefaultChatGroup: 結果", {
-      newGroup,
-      success: !!newGroup,
-      userId,
-    });
-
-    return newGroup;
   } catch (error) {
-    console.error("getOrCreateDefaultChatGroup: 例外発生", { error, userId });
-    return null;
+    console.error("データベース状態確認エラー:", error);
   }
+
+  console.log("=== データベース状態デバッグ終了 ===");
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { addBookmark } from "@/lib/bookmarks";
+import { createBookmark } from "@/lib/bookmarks";
 
 interface AIResponse {
   id: string;
@@ -141,17 +141,25 @@ export default function ChatPage() {
     try {
       setBookmarkingIds((prev) => new Set(prev).add(response.id));
 
-      const { error } = await addBookmark(response.text, response.translation);
+      // 注意: createBookmarkはchatMessageIdが必要ですが、
+      // このページではAIレスポンスをブックマークしようとしています
+      // 一時的にresponse.idをchatMessageIdとして使用しますが、
+      // 本来はchat_messagesテーブルにレコードを作成してからそのIDを使用すべきです
+      const notes = `英語: "${response.text}" 日本語: "${response.translation}"`;
+      const bookmark = await createBookmark(response.id, notes);
 
-      if (error) {
-        console.error("ブックマーク追加エラー:", error);
-        alert("ブックマークの追加に失敗しました");
-      } else {
+      if (bookmark) {
         alert("ブックマークに追加しました！");
+      } else {
+        alert("ブックマークの追加に失敗しました");
       }
     } catch (error) {
       console.error("ブックマーク追加エラー:", error);
-      alert("ブックマークの追加に失敗しました");
+      if (error instanceof Error) {
+        alert(`ブックマークの追加に失敗しました: ${error.message}`);
+      } else {
+        alert("ブックマークの追加に失敗しました");
+      }
     } finally {
       setBookmarkingIds((prev) => {
         const newSet = new Set(prev);
