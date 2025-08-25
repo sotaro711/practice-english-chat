@@ -1,9 +1,10 @@
--- DEPRECATED: This migration has dependency issues
--- Use 20250103000002_fix_migration_dependencies.sql instead
--- Complete migration to create all required tables in correct order
--- This migration creates everything from scratch
+-- Fix migration dependencies and table creation order
+-- This migration ensures all tables are created in the correct order
 
--- Ensure required functions exist
+-- 1. Ensure uuid extension is enabled
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. Ensure update_updated_at_column function exists
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -12,7 +13,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 1. Create profiles table if it doesn't exist
+-- 3. Create profiles table if it doesn't exist
 CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -23,6 +24,19 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add unique constraint for user_id if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'profiles_user_id_key' 
+    AND conrelid = 'profiles'::regclass
+  ) THEN
+    ALTER TABLE profiles 
+    ADD CONSTRAINT profiles_user_id_key UNIQUE (user_id);
+  END IF;
+END $$;
 
 -- Create indexes for profiles
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username);
@@ -47,31 +61,7 @@ DROP POLICY IF EXISTS "Users can view and edit their own profile" ON profiles;
 CREATE POLICY "Users can view and edit their own profile" ON profiles
   FOR ALL USING (auth.uid() = user_id);
 
--- Create handle_new_user function and trigger
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO profiles (user_id, username, display_name)
-  VALUES (
-    NEW.id,
-    NEW.raw_user_meta_data->>'username',
-    NEW.raw_user_meta_data->>'display_name'
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trigger for auto profile creation
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'on_auth_user_created') THEN
-        CREATE TRIGGER on_auth_user_created
-          AFTER INSERT ON auth.users
-          FOR EACH ROW EXECUTE FUNCTION handle_new_user();
-    END IF;
-END $$;
-
--- 2. Create chat_groups table
+-- 4. Create chat_groups table if it doesn't exist
 CREATE TABLE IF NOT EXISTS chat_groups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -110,7 +100,7 @@ CREATE POLICY "Users can access their own chat groups" ON chat_groups
     )
   );
 
--- 3. Create chat_messages table
+-- 5. Create chat_messages table if it doesn't exist
 CREATE TABLE IF NOT EXISTS chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   chat_group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
@@ -139,18 +129,22 @@ CREATE POLICY "Users can access messages in their chat groups" ON chat_messages
     )
   );
 
--- 4. Handle bookmarks table migration
--- First drop any existing views that depend on bookmarks
+-- 6. Create bookmarks table if it doesn't exist
+-- Drop any existing views that depend on bookmarks first
 DROP VIEW IF EXISTS user_bookmarks_view;
 
--- Check if old bookmarks table exists and migrate it
+-- Check and handle existing bookmarks table
 DO $$
 BEGIN
+    -- If bookmarks table exists with old structure, we need to migrate it
     IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'bookmarks') THEN
-        -- Check if it has old structure (user_id column)
+        -- Check if it has the old structure with user_id column
         IF EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bookmarks' AND column_name = 'user_id') THEN
-            -- Create new bookmarks table with new structure
-            CREATE TABLE bookmarks_new (
+            -- Rename old table temporarily
+            ALTER TABLE bookmarks RENAME TO bookmarks_old;
+            
+            -- Create new bookmarks table with correct structure
+            CREATE TABLE bookmarks (
               id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
               profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
               chat_message_id UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
@@ -158,22 +152,33 @@ BEGIN
               created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
               UNIQUE(profile_id, chat_message_id)
             );
-
-            -- Try to migrate existing data (only if profiles and chat_messages exist)
-            INSERT INTO bookmarks_new (id, profile_id, chat_message_id, notes, created_at)
+            
+            -- Migrate data if possible
+            INSERT INTO bookmarks (id, profile_id, chat_message_id, notes, created_at)
             SELECT 
               b.id,
               p.id as profile_id,
-              b.message_id as chat_message_id,
-              NULL as notes,
+              CASE 
+                WHEN EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bookmarks_old' AND column_name = 'message_id') 
+                THEN b.message_id 
+                ELSE b.chat_message_id 
+              END as chat_message_id,
+              b.notes,
               b.created_at
-            FROM bookmarks b
+            FROM bookmarks_old b
             JOIN profiles p ON b.user_id = p.user_id
-            WHERE EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.id = b.message_id);
-
-            -- Drop old table and rename new one
-            DROP TABLE bookmarks CASCADE;
-            ALTER TABLE bookmarks_new RENAME TO bookmarks;
+            WHERE EXISTS (
+              SELECT 1 FROM chat_messages cm 
+              WHERE cm.id = CASE 
+                WHEN EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'bookmarks_old' AND column_name = 'message_id') 
+                THEN b.message_id 
+                ELSE b.chat_message_id 
+              END
+            )
+            ON CONFLICT DO NOTHING;
+            
+            -- Drop old table
+            DROP TABLE bookmarks_old CASCADE;
         END IF;
     ELSE
         -- Create new bookmarks table from scratch
@@ -205,7 +210,7 @@ CREATE POLICY "Users can access their own bookmarks" ON bookmarks
     )
   );
 
--- 5. Create views
+-- 7. Recreate views
 -- Create user_bookmarks_view
 CREATE OR REPLACE VIEW user_bookmarks_view AS
 SELECT
@@ -249,3 +254,9 @@ FROM chat_groups cg
 LEFT JOIN chat_messages cm ON cg.id = cm.chat_group_id
 GROUP BY cg.id, cg.profile_id, cg.name, cg.description, cg.is_active, cg.created_at, cg.updated_at
 ORDER BY MAX(cm.created_at) DESC NULLS LAST;
+
+-- コメント追加
+COMMENT ON TABLE profiles IS 'ユーザープロファイル情報を管理するテーブル';
+COMMENT ON TABLE chat_groups IS 'チャットグループを管理するテーブル';
+COMMENT ON TABLE chat_messages IS 'チャットメッセージを管理するテーブル';
+COMMENT ON TABLE bookmarks IS 'ユーザーのブックマークを管理するテーブル';

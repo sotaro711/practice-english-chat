@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { createBookmark } from "@/lib/bookmarks";
+import { getCurrentUserProfile } from "@/lib/profiles";
+import { Database } from "@/lib/database.types";
 
 interface AIResponse {
   id: string;
@@ -17,6 +19,8 @@ interface Message {
   content: string;
 }
 
+type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+
 export default function ChatPage() {
   const { user, isAuthenticated, loading } = useAuth();
   const router = useRouter();
@@ -24,6 +28,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +98,27 @@ export default function ChatPage() {
       setIsSubmitting(false);
     }
   };
+
+  // プロフィール情報を取得
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (user) {
+        try {
+          setProfileLoading(true);
+          const userProfile = await getCurrentUserProfile();
+          setProfile(userProfile);
+        } catch (error) {
+          console.error("プロフィール取得エラー:", error);
+        } finally {
+          setProfileLoading(false);
+        }
+      }
+    };
+
+    if (user && isAuthenticated) {
+      loadProfile();
+    }
+  }, [user, isAuthenticated]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -187,6 +214,68 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* プロフィール情報エリア */}
+      {profile && (
+        <div className="bg-white border-b border-gray-200 p-4">
+          <div className="flex items-center space-x-3">
+            <div className="flex-shrink-0">
+              {profile.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt="プロフィール画像"
+                  className="w-12 h-12 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
+                  <span className="text-white font-medium text-lg">
+                    {profile.display_name?.charAt(0)?.toUpperCase() ||
+                      profile.username?.charAt(0)?.toUpperCase() ||
+                      user?.email?.charAt(0)?.toUpperCase() ||
+                      "U"}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {profile.display_name || profile.username || "ユーザー"}
+              </h2>
+              <p className="text-sm text-gray-600">
+                ID: {profile.id.slice(0, 8)}...
+              </p>
+              {profile.learning_preferences &&
+                Object.keys(profile.learning_preferences).length > 0 && (
+                  <p className="text-sm text-blue-600">学習設定: 設定済み</p>
+                )}
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">
+                登録日:{" "}
+                {new Date(profile.created_at).toLocaleDateString("ja-JP")}
+              </p>
+              {profile.updated_at !== profile.created_at && (
+                <p className="text-xs text-gray-500">
+                  更新日:{" "}
+                  {new Date(profile.updated_at).toLocaleDateString("ja-JP")}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* プロフィール読み込み中 */}
+      {profileLoading && (
+        <div className="bg-gray-50 border-b border-gray-200 p-4">
+          <div className="flex items-center space-x-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <span className="text-gray-600">
+              プロフィール情報を読み込み中...
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* チャットエリア */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* AI初期メッセージ */}
